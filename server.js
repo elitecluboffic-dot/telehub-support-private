@@ -1,7 +1,37 @@
+/**
+ * Cloudflare Worker — Private Proxy Order Notifier
+ * ---------------------------------------------------
+ * Menerima POST dari form private-proxy.php, lalu kirim
+ * notifikasi order ke Telegram bot pemilik website.
+ *
+ * Env vars yang dibutuhkan (set via `wrangler secret put`):
+ *   TELEGRAM_BOT_TOKEN   -> token bot Telegram kamu
+ *   TELEGRAM_CHAT_ID     -> chat id tujuan notifikasi (akun/grup kamu)
+ *
+ * Env var biasa (boleh taruh di wrangler.toml [vars]):
+ *   ALLOWED_ORIGIN        -> domain website kamu, contoh: https://telecard.example.com
+ */
+
 const COUNTRY_LABELS = {
   us: '🇺🇸 US',
   sg: '🇸🇬 Singapore',
   nl: '🇳🇱 Belanda',
+};
+
+// ── Paket & harga resmi ditentukan di server, JANGAN percaya harga dari client ──
+const PACKAGES = {
+  original: {
+    label: 'Original',
+    price: 20000,
+    priceLabel: 'Rp20.000',
+    bonusFollowers: 0,
+  },
+  super: {
+    label: 'Super',
+    price: 60000,
+    priceLabel: 'Rp60.000',
+    bonusFollowers: 500,
+  },
 };
 
 export default {
@@ -17,14 +47,6 @@ export default {
       return jsonResponse({ ok: false, error: 'Method not allowed' }, 405, allowedOrigin);
     }
 
-
-    if (env.ALLOWED_PATH) {
-      const referer = request.headers.get('Referer') || '';
-      if (!referer.includes(env.ALLOWED_PATH)) {
-        return jsonResponse({ ok: false, error: 'Sumber request tidak diizinkan' }, 403, allowedOrigin);
-      }
-    }
-
     let data;
     try {
       data = await request.json();
@@ -32,15 +54,24 @@ export default {
       return jsonResponse({ ok: false, error: 'Data tidak valid' }, 400, allowedOrigin);
     }
 
+    // Honeypot anti-bot: field tersembunyi di form, kalau keisi berarti bot
     if (data.website) {
       return jsonResponse({ ok: true }, 200, allowedOrigin);
     }
 
-    const country = sanitize(data.country);
-    const channel = sanitize(data.channel);
+    const packageKey       = sanitize(data.package);
+    const country          = sanitize(data.country);
+    const channel          = sanitize(data.channel);
+    const followersLink    = sanitize(data.followers_link);
     const telegramUsername = sanitize(data.telegram_username);
-    const whatsapp = sanitize(data.whatsapp);
-    const email = sanitize(data.email);
+    const whatsapp         = sanitize(data.whatsapp);
+    const email            = sanitize(data.email);
+
+    // ── Validasi paket ──
+    if (!packageKey || !PACKAGES[packageKey]) {
+      return jsonResponse({ ok: false, error: 'Paket tidak valid' }, 400, allowedOrigin);
+    }
+    const pkg = PACKAGES[packageKey];
 
     // Validasi wajib
     if (!telegramUsername) {
@@ -51,6 +82,21 @@ export default {
     }
     if (email && !isValidEmail(email)) {
       return jsonResponse({ ok: false, error: 'Format email tidak valid' }, 400, allowedOrigin);
+    }
+    // Paket Super wajib isi link channel/grup (buat proses bonus followers)
+    if (packageKey === 'super' && !followersLink) {
+      return jsonResponse(
+        { ok: false, error: 'Paket Super butuh link Channel/Grup untuk proses bonus followers' },
+        400,
+        allowedOrigin
+      );
+    }
+    if (packageKey === 'super' && followersLink && !isValidTelegramLink(followersLink)) {
+      return jsonResponse(
+        { ok: false, error: 'Link Channel/Grup harus link t.me yang valid' },
+        400,
+        allowedOrigin
+      );
     }
 
     const cleanUsername = telegramUsername.startsWith('@')
@@ -63,18 +109,25 @@ export default {
       timeStyle: 'short',
     });
 
+    // Plain text (bukan Markdown) biar aman dari karakter khusus di input user
     const lines = [
       '🔔 ORDER PRIVATE PROXY BARU',
       '',
+      `Paket        : ${pkg.label}${packageKey === 'super' ? ' 🎁' : ''}`,
       `Negara       : ${COUNTRY_LABELS[country]}`,
       `Channel promo: ${channel || '-'}`,
       `Telegram     : ${cleanUsername}`,
       `WhatsApp     : ${whatsapp || '-'}`,
       `Email        : ${email || '-'}`,
-      `Harga        : Rp20.000 / bulan`,
-      '',
-      `Waktu: ${now} WIB`,
+      `Harga        : ${pkg.priceLabel} / bulan`,
     ];
+
+    if (pkg.bonusFollowers > 0) {
+      lines.push(`Bonus        : +${pkg.bonusFollowers} Followers/Member Real Indo`);
+      lines.push(`Link Target  : ${followersLink || '-'}`);
+    }
+
+    lines.push('', `Waktu: ${now} WIB`);
 
     const text = lines.join('\n');
 
@@ -114,6 +167,10 @@ function sanitize(value) {
 
 function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isValidTelegramLink(value) {
+  return /^https:\/\/t\.me\/[a-zA-Z0-9_]{3,}\/?$/.test(value);
 }
 
 function corsHeaders(origin) {
