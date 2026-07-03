@@ -18,6 +18,22 @@ const COUNTRY_LABELS = {
   nl: '🇳🇱 Belanda',
 };
 
+// ── Paket & harga resmi ditentukan di server, JANGAN percaya harga dari client ──
+const PACKAGES = {
+  original: {
+    label: 'Original',
+    price: 20000,
+    priceLabel: 'Rp20.000',
+    bonusFollowers: 0,
+  },
+  super: {
+    label: 'Super',
+    price: 60000,
+    priceLabel: 'Rp60.000',
+    bonusFollowers: 500,
+  },
+};
+
 export default {
   async fetch(request, env, ctx) {
     const allowedOrigin = env.ALLOWED_ORIGIN || '*';
@@ -43,11 +59,18 @@ export default {
       return jsonResponse({ ok: true }, 200, allowedOrigin);
     }
 
-    const country = sanitize(data.country);
-    const channel = sanitize(data.channel);
+    const packageKey       = sanitize(data.package);
+    const country          = sanitize(data.country);
+    const channel          = sanitize(data.channel);
     const telegramUsername = sanitize(data.telegram_username);
-    const whatsapp = sanitize(data.whatsapp);
-    const email = sanitize(data.email);
+    const whatsapp         = sanitize(data.whatsapp);
+    const email            = sanitize(data.email);
+
+    // ── Validasi paket ──
+    if (!packageKey || !PACKAGES[packageKey]) {
+      return jsonResponse({ ok: false, error: 'Paket tidak valid' }, 400, allowedOrigin);
+    }
+    const pkg = PACKAGES[packageKey];
 
     // Validasi wajib
     if (!telegramUsername) {
@@ -58,6 +81,14 @@ export default {
     }
     if (email && !isValidEmail(email)) {
       return jsonResponse({ ok: false, error: 'Format email tidak valid' }, 400, allowedOrigin);
+    }
+    // Paket Super wajib isi channel/grup (buat proses bonus followers)
+    if (packageKey === 'super' && !channel) {
+      return jsonResponse(
+        { ok: false, error: 'Paket Super butuh username Channel/Grup untuk proses bonus followers' },
+        400,
+        allowedOrigin
+      );
     }
 
     const cleanUsername = telegramUsername.startsWith('@')
@@ -74,15 +105,20 @@ export default {
     const lines = [
       '🔔 ORDER PRIVATE PROXY BARU',
       '',
+      `Paket        : ${pkg.label}${packageKey === 'super' ? ' 🎁' : ''}`,
       `Negara       : ${COUNTRY_LABELS[country]}`,
       `Channel promo: ${channel || '-'}`,
       `Telegram     : ${cleanUsername}`,
       `WhatsApp     : ${whatsapp || '-'}`,
       `Email        : ${email || '-'}`,
-      `Harga        : Rp20.000 / bulan`,
-      '',
-      `Waktu: ${now} WIB`,
+      `Harga        : ${pkg.priceLabel} / bulan`,
     ];
+
+    if (pkg.bonusFollowers > 0) {
+      lines.push(`Bonus        : +${pkg.bonusFollowers} Followers/Member Real Indo`);
+    }
+
+    lines.push('', `Waktu: ${now} WIB`);
 
     const text = lines.join('\n');
 
