@@ -62,6 +62,7 @@ export default {
     const packageKey       = sanitize(data.package);
     const country          = sanitize(data.country);
     const channel          = sanitize(data.channel);
+    const followersLink    = sanitize(data.followers_link);
     const telegramUsername = sanitize(data.telegram_username);
     const whatsapp         = sanitize(data.whatsapp);
     const email            = sanitize(data.email);
@@ -82,10 +83,17 @@ export default {
     if (email && !isValidEmail(email)) {
       return jsonResponse({ ok: false, error: 'Format email tidak valid' }, 400, allowedOrigin);
     }
-    // Paket Super wajib isi channel/grup (buat proses bonus followers)
-    if (packageKey === 'super' && !channel) {
+    // Paket Super wajib isi link channel/grup (buat proses bonus followers)
+    if (packageKey === 'super' && !followersLink) {
       return jsonResponse(
-        { ok: false, error: 'Paket Super butuh username Channel/Grup untuk proses bonus followers' },
+        { ok: false, error: 'Paket Super butuh link Channel/Grup untuk proses bonus followers' },
+        400,
+        allowedOrigin
+      );
+    }
+    if (packageKey === 'super' && followersLink && !isValidTelegramLink(followersLink)) {
+      return jsonResponse(
+        { ok: false, error: 'Link Channel/Grup harus link t.me yang valid' },
         400,
         allowedOrigin
       );
@@ -116,6 +124,7 @@ export default {
 
     if (pkg.bonusFollowers > 0) {
       lines.push(`Bonus        : +${pkg.bonusFollowers} Followers/Member Real Indo`);
+      lines.push(`Link Target  : ${followersLink || '-'}`);
     }
 
     lines.push('', `Waktu: ${now} WIB`);
@@ -158,6 +167,10 @@ function sanitize(value) {
 
 function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isValidTelegramLink(value) {
+  return /^https:\/\/t\.me\/[a-zA-Z0-9_]{3,}\/?$/.test(value);
 }
 
 function corsHeaders(origin) {
