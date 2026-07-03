@@ -1,0 +1,23 @@
+name = "private-proxy-notify"
+main = "server.js"
+compatibility_date = "2026-07-01"
+
+[vars]
+# Origin wajib berupa scheme+domain SAJA, tanpa path (batasan CORS browser)
+ALLOWED_ORIGIN = "https://telehub.nfy.fyi"
+
+# Opsional: batasi lebih spesifik ke satu halaman lewat Referer header.
+# Bukan pengaman kuat (Referer bisa kosong), tapi cukup untuk mencegah
+# halaman lain di domain yang sama ikut submit ke worker ini.
+ALLOWED_PATH = "/buy-proxy.php"
+
+# ===========================================
+# SECRETS — JANGAN taruh di file ini!
+# Set lewat terminal setelah install wrangler:
+#
+#   wrangler secret put TELEGRAM_BOT_TOKEN
+#   wrangler secret put TELEGRAM_CHAT_ID
+#
+# Deploy dengan:
+#   wrangler deploy
+# ===========================================
