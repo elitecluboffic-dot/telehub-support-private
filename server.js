@@ -1,3 +1,17 @@
+/**
+ * Cloudflare Worker — Private Proxy Order Notifier
+ * ---------------------------------------------------
+ * Menerima POST dari form private-proxy.php, lalu kirim
+ * notifikasi order ke Telegram bot pemilik website.
+ *
+ * Env vars yang dibutuhkan (set via `wrangler secret put`):
+ *   TELEGRAM_BOT_TOKEN   -> token bot Telegram kamu
+ *   TELEGRAM_CHAT_ID     -> chat id tujuan notifikasi (akun/grup kamu)
+ *
+ * Env var biasa (boleh taruh di wrangler.toml [vars]):
+ *   ALLOWED_ORIGIN        -> domain website kamu, contoh: https://telecard.example.com
+ */
+
 const COUNTRY_LABELS = {
   us: '🇺🇸 US',
   sg: '🇸🇬 Singapore',
@@ -17,14 +31,6 @@ export default {
       return jsonResponse({ ok: false, error: 'Method not allowed' }, 405, allowedOrigin);
     }
 
-
-    if (env.ALLOWED_PATH) {
-      const referer = request.headers.get('Referer') || '';
-      if (!referer.includes(env.ALLOWED_PATH)) {
-        return jsonResponse({ ok: false, error: 'Sumber request tidak diizinkan' }, 403, allowedOrigin);
-      }
-    }
-
     let data;
     try {
       data = await request.json();
@@ -32,6 +38,7 @@ export default {
       return jsonResponse({ ok: false, error: 'Data tidak valid' }, 400, allowedOrigin);
     }
 
+    // Honeypot anti-bot: field tersembunyi di form, kalau keisi berarti bot
     if (data.website) {
       return jsonResponse({ ok: true }, 200, allowedOrigin);
     }
@@ -63,6 +70,7 @@ export default {
       timeStyle: 'short',
     });
 
+    // Plain text (bukan Markdown) biar aman dari karakter khusus di input user
     const lines = [
       '🔔 ORDER PRIVATE PROXY BARU',
       '',
